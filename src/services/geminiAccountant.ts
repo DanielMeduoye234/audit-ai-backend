@@ -26,8 +26,13 @@ class GeminiAccountantService {
   private visionModel: any;
 
   constructor(apiKey: string) {
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    if (!apiKey) {
+      console.error('❌ [GEMINI] API Key is missing! AI features will not work.');
+    } else {
+      console.log('✅ [GEMINI] AI Accountant Service initialized with API Key (length: ' + apiKey.length + ')');
+    }
+    this.genAI = new GoogleGenerativeAI(apiKey || 'MISSING_KEY');
+    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
   /**
@@ -97,7 +102,7 @@ class GeminiAccountantService {
     ];
 
     const model = this.genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: 'gemini-1.5-flash',
       tools: tools as any // Type assertion to bypass strict SDK typing
     });
     
@@ -199,6 +204,9 @@ class GeminiAccountantService {
         return text;
       } catch (error: any) {
         console.error("Gemini Chat Error:", error);
+        if (error.message?.includes('403') || error.message?.includes('identity')) {
+           return "❌ AI Identity Error: Your API Key is missing or unregistered in the live settings. Please check your Railway Environment Variables.";
+        }
         return `Connection Error: ${error.message || "Unknown error"}. (Hint: Check your API Key)`;
       }
   }
@@ -342,6 +350,52 @@ Extract only the data. Return valid JSON only, no markdown or explanation.`;
     } catch (error) {
       console.error('Image analysis error:', error);
       throw new Error('Failed to analyze image. Please try again.');
+    }
+  }
+
+  /**
+   * Perform a comprehensive audit on raw financial records (CSV text or PDF text)
+   */
+  async auditFinancialRecords(recordsText: string): Promise<{
+    auditSummary: string;
+    anomalies: string[];
+    insights: string[];
+  }> {
+    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    const prompt = `You are an expert Financial Auditor. I will provide you with raw financial data (extracted from a CSV or PDF).
+    
+    YOUR TASKS:
+    1. **Analyze** the transactions for any anomalies (e.g., duplicate charges, unusually high amounts, missing dates).
+    2. **Categorize** the spending patterns (e.g., "High spending on Software", "Consistent Rent").
+    3. **Summarize** the financial health based on this data.
+
+    DATA:
+    ${recordsText.substring(0, 30000)} // efficient token usage limit
+
+    OUTPUT FORMAT (JSON ONLY):
+    {
+      "auditSummary": "Brief professional summary of the findings.",
+      "anomalies": ["List of potential oddities or errors found"],
+      "insights": ["Strategic financial observations"]
+    }
+    
+    Return ONLY valid JSON.`;
+
+    try {
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      
+      // Cleanup JSON
+      const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      return JSON.parse(cleanText);
+    } catch (error) {
+      console.error('Audit analysis failed:', error);
+      return {
+        auditSummary: "Unable to complete detailed audit analysis on this document.",
+        anomalies: [],
+        insights: ["Data processing error occurred."]
+      };
     }
   }
 }

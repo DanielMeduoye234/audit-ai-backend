@@ -6,6 +6,7 @@ import transactionRepository from '../repositories/transactionRepository';
 import notificationRepository from '../repositories/notificationRepository';
 import { authenticate } from '../middleware/auth';
 import auditService from '../services/auditService';
+import geminiAccountant from '../services/geminiAccountant'; // Import Gemini
 
 const router = express.Router();
 
@@ -20,11 +21,12 @@ const upload = multer({
       file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // xlsx
       file.mimetype === 'application/vnd.ms-excel' || // xls
       file.mimetype === 'text/csv' || // csv
-      file.originalname.match(/\.(xlsx|xls|csv)$/) // fallback extension check
+      file.mimetype === 'application/pdf' || // pdf
+      file.originalname.match(/\.(xlsx|xls|csv|pdf)$/) // fallback extension check
     ) {
       cb(null, true);
     } else {
-      cb(new Error('Only Excel and CSV files are allowed'));
+      cb(new Error('Only Excel, CSV, and PDF files are allowed'));
     }
   }
 });
@@ -56,7 +58,18 @@ router.post('/analyze', authenticate, upload.single('file'), async (req, res) =>
       );
     }
 
-    // AUTO-IMPORT TRANSACTIONS
+    // RUN AI AUDIT (The "Powerful" Part)
+    let aiAuditResult = null;
+    try {
+        console.log('🧠 [Documents] Running Gemini AI Audit on file content...');
+        const gemini = new geminiAccountant(process.env.GEMINI_API_KEY || '');
+        aiAuditResult = await gemini.auditFinancialRecords(result.fullContent);
+        console.log('✅ [Documents] AI Audit completed successfully.');
+    } catch (aiError) {
+        console.error('⚠️ [Documents] AI Audit failed (non-blocking):', aiError);
+    }
+
+    // AUTO-IMPORT TRANSACTIONS (Best Effort)
     let importedCount = 0;
     let skippedCount = 0;
     const errors: string[] = [];
@@ -117,7 +130,10 @@ router.post('/analyze', authenticate, upload.single('file'), async (req, res) =>
         ...result,
         imported: importedCount,
         skipped: skippedCount,
-        errors: errors.length > 0 ? errors.slice(0, 5) : undefined // Return first 5 errors
+        imported: importedCount,
+        skipped: skippedCount,
+        errors: errors.length > 0 ? errors.slice(0, 5) : undefined, // Return first 5 errors
+        aiAudit: aiAuditResult // Return the AI analysis
       }
     });
   } catch (error: any) {

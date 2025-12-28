@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import pdf from 'pdf-parse';
 
 export interface DocumentAnalysisResult {
   filename: string;
@@ -11,11 +12,18 @@ export interface DocumentAnalysisResult {
 
 export class DocumentService {
   /**
-   * Parse an uploaded file buffer (Excel or CSV)
+   * Parse an uploaded file buffer (Excel, CSV, or PDF)
    */
   async parseDocument(buffer: Buffer, filename: string): Promise<DocumentAnalysisResult> {
     try {
-      // Read the workbook
+      // Check file extension
+      const isPdf = filename.toLowerCase().endsWith('.pdf');
+
+      if (isPdf) {
+        return this.parsePDF(buffer, filename);
+      }
+
+      // Read the workbook for Excel/CSV
       const workbook = XLSX.read(buffer, { type: 'buffer' });
       
       // Get the first sheet

@@ -3,7 +3,13 @@ import express from 'express';
 import GeminiAccountantService from '../services/geminiAccountant';
 
 const router = express.Router();
-const aiService = new GeminiAccountantService(process.env.GEMINI_API_KEY || '');
+const apiKey = process.env.GEMINI_API_KEY;
+
+if (!apiKey) {
+  console.warn('⚠️  [AI ROUTE] GEMINI_API_KEY not found in environment variables!');
+}
+
+const aiService = new GeminiAccountantService(apiKey || '');
 
 /**
  * Generate mock AI response for testing
