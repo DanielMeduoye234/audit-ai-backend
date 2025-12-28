@@ -1,7 +1,16 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 
 const dbPath = path.join(__dirname, '../../data/conversations.db');
+const dbDir = path.dirname(dbPath);
+
+// Ensure database directory exists
+if (!fs.existsSync(dbDir)) {
+  console.log(`📂 Creating database directory at: ${dbDir}`);
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
 const db = new Database(dbPath);
 
 // Create tables
