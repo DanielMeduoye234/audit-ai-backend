@@ -15,7 +15,7 @@
     "@google/generative-ai": "^0.24.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/multer": "^2.0.0",
-    "@types/uuid": "^10.0.0",
+    "@types/uuid": "^9.0.8",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.4.6",
     "cors": "^2.8.5",
@@ -24,7 +24,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.11",
-    "uuid": "^13.0.0",
+    "uuid": "^9.0.1",
     "ws": "^8.14.2",
     "xlsx": "^0.18.5"
   },
