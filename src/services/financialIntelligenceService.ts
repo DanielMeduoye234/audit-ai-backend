@@ -42,6 +42,23 @@ export interface ScenarioResult {
   risk_level: 'low' | 'medium' | 'high';
 }
 
+export interface DailyBriefing {
+  date: string;
+  yesterday_spend: number;
+  spend_diff_percent: number; // vs average
+  top_expense: { description: string; amount: number; category: string } | null;
+  insight: string;
+  greeting: string;
+}
+
+export interface RunwayAnalysis {
+  current_balance: number;
+  monthly_burn_rate: number;
+  runway_months: number;
+  projected_zero_date: string | null; // null if profitable
+  status: 'critical' | 'warning' | 'healthy' | 'infinite';
+}
+
 class FinancialIntelligenceService {
   /**
    * Generate cash flow forecast for the next N months
@@ -409,6 +426,129 @@ class FinancialIntelligenceService {
     insights.push(...spendingInsights);
 
     return insights.slice(0, 10); // Return top 10 insights
+  }
+
+  /**
+   * Get Morning CFO Briefing
+   */
+  async getDailyBriefing(userId: string): Promise<DailyBriefing> {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // Get yesterday's transactions
+    const transactions = transactionRepository.getTransactionsByDateRange(userId, yesterdayStr, yesterdayStr);
+    const yesterdayExpenses = transactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // Get average daily spend (last 30 days) for comparison
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const history = transactionRepository.getTransactionsByDateRange(userId, thirtyDaysAgo.toISOString().split('T')[0], yesterdayStr);
+    const totalHistoryExpense = history.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const avgDailySpend = totalHistoryExpense / 30;
+
+    // Calculate difference
+    const diffPercent = avgDailySpend > 0 
+      ? ((yesterdayExpenses - avgDailySpend) / avgDailySpend) * 100 
+      : 0;
+
+    // Find top expense
+    const expenses = transactions.filter(t => t.type === 'expense');
+    expenses.sort((a, b) => b.amount - a.amount);
+    const topExpense = expenses.length > 0 
+      ? { description: expenses[0].description, amount: expenses[0].amount, category: expenses[0].category } 
+      : null;
+
+    // Generate smart insight
+    let insight = "Spending is on track.";
+    if (diffPercent > 20) insight = `Spending was higher than usual yesterday.`;
+    else if (diffPercent < -20) insight = `Great job! You spent less than average yesterday.`;
+    if (topExpense && topExpense.amount > yesterdayExpenses * 0.5) {
+      insight += ` ${topExpense.description} was the biggest cost.`;
+    }
+
+    // Dynamic greeting based on time
+    const hour = new Date().getHours();
+    let greeting = "Hello";
+    if (hour < 12) greeting = "Good Morning";
+    else if (hour < 18) greeting = "Good Afternoon";
+    else greeting = "Good Evening";
+
+    return {
+      date: yesterdayStr,
+      yesterday_spend: yesterdayExpenses,
+      spend_diff_percent: Math.round(diffPercent),
+      top_expense: topExpense,
+      insight,
+      greeting
+    };
+  }
+
+  /**
+   * Calculate Cash Runway & Burn Rate
+   */
+  async getRunwayAnalysis(userId: string): Promise<RunwayAnalysis> {
+    const summary = transactionRepository.getFinancialSummary(userId);
+    const currentBalance = summary.profit; // Assuming profit = cash for simple model
+
+    // Calculate Burn Rate (avg monthly expenses over last 3 months)
+    const trends = analyticsRepository.getMonthlyTrends(userId, 3);
+    const avgBurnRate = trends.length > 0
+      ? trends.reduce((sum, t) => sum + t.expenses, 0) / trends.length
+      : 0;
+
+    if (currentBalance <= 0) {
+        return {
+            current_balance: currentBalance,
+            monthly_burn_rate: avgBurnRate,
+            runway_months: 0,
+            projected_zero_date: new Date().toISOString().split('T')[0],
+            status: 'critical'
+        };
+    }
+
+    if (avgBurnRate <= 0) {
+        return {
+            current_balance: currentBalance,
+            monthly_burn_rate: 0,
+            runway_months: 999,
+            projected_zero_date: null,
+            status: 'infinite'
+        };
+    }
+
+    // Is the user profitable? (Income > Expenses)
+    const avgIncome = trends.reduce((sum, t) => sum + t.income, 0) / (trends.length || 1);
+    const isProfitable = avgIncome > avgBurnRate;
+
+    const runwayMonths = currentBalance / Math.max(1, avgBurnRate - (isProfitable ? avgIncome : 0)); 
+    // If profitable, we don't really have a "burn" in the traditional sense, 
+    // but users might still want to know how long cash lasts if income stops? 
+    // Standard runway = Cash / Gross Burn. Let's stick to Gross Burn as it's safer.
+    
+    const standardRunway = currentBalance / avgBurnRate;
+
+    // Project Zero Date
+    const today = new Date();
+    const zeroDate = new Date(today.getTime() + (standardRunway * 30 * 24 * 60 * 60 * 1000));
+    
+    let status: 'critical' | 'warning' | 'healthy' | 'infinite' = 'healthy';
+    if (standardRunway < 1) status = 'critical';
+    else if (standardRunway < 3) status = 'warning';
+    
+    // If making profit, status is infinite/healthy regardless of burn
+    if (isProfitable) status = 'infinite';
+
+    return {
+      current_balance: currentBalance,
+      monthly_burn_rate: avgBurnRate,
+      runway_months: isProfitable ? 999 : parseFloat(standardRunway.toFixed(1)),
+      projected_zero_date: isProfitable ? null : zeroDate.toISOString().split('T')[0],
+      status
+    };
   }
 }
 

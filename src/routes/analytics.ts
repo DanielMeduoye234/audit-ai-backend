@@ -234,4 +234,46 @@ router.post('/detect-anomalies/:userId', authenticate, async (req, res) => {
   }
 });
 
+
+
+/**
+ * GET /api/analytics/briefing/:userId
+ * Get Morning CFO Briefing
+ */
+router.get('/briefing/:userId', authenticate, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const authenticatedUserId = req.user!.id; // Authenticated user
+    
+    if (userId !== authenticatedUserId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const briefing = await financialIntelligenceService.getDailyBriefing(userId);
+    res.json({ success: true, briefing });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/analytics/runway/:userId
+ * Get Cash Runway Analysis
+ */
+router.get('/runway/:userId', authenticate, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const authenticatedUserId = req.user!.id;
+    
+    if (userId !== authenticatedUserId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const runway = await financialIntelligenceService.getRunwayAnalysis(userId);
+    res.json({ success: true, runway });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;
