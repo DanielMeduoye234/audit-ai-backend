@@ -92,7 +92,7 @@ class ReportService {
    * Generate Financial Summary Report
    */
   private async generateFinancialReport(report: Report): Promise<string> {
-    const transactions = transactionRepository.findByUserId(report.userId);
+    const transactions = transactionRepository.getAllTransactions(report.userId);
     
     // Filter by date range
     const filtered = this.filterByDateRange(transactions, report.dateRange);
@@ -133,7 +133,7 @@ class ReportService {
    * Generate Transaction Log Report
    */
   private async generateTransactionReport(report: Report): Promise<string> {
-    const transactions = transactionRepository.findByUserId(report.userId);
+    const transactions = transactionRepository.getAllTransactions(report.userId);
     
     // Filter by date range
     let filtered = this.filterByDateRange(transactions, report.dateRange);
@@ -169,7 +169,7 @@ class ReportService {
    * Generate Analytics Report
    */
   private async generateAnalyticsReport(report: Report): Promise<string> {
-    const transactions = transactionRepository.findByUserId(report.userId);
+    const transactions = transactionRepository.getAllTransactions(report.userId);
     const filtered = this.filterByDateRange(transactions, report.dateRange);
 
     reportRepository.updateProgress(report.id, 40);
@@ -214,7 +214,7 @@ class ReportService {
    * Generate Compliance Report
    */
   private async generateComplianceReport(report: Report): Promise<string> {
-    const transactions = transactionRepository.findByUserId(report.userId);
+    const transactions = transactionRepository.getAllTransactions(report.userId);
     const filtered = this.filterByDateRange(transactions, report.dateRange);
 
     reportRepository.updateProgress(report.id, 50);
