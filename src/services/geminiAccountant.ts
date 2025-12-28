@@ -1,0 +1,349 @@
+
+// Google Gemini AI Service - ChatGPT-Level Conversation
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import conversationRepository, { ConversationMessage as DBConversationMessage } from '../repositories/conversationRepository';
+import transactionRepository from '../repositories/transactionRepository';
+import notificationRepository from '../repositories/notificationRepository';
+
+interface ConversationMessage {
+  role: 'user' | 'model' | 'function';
+  parts: any[];
+}
+
+interface FinancialContext {
+  cashBalance: number;
+  revenue: { current: number; change: number };
+  expenses: { current: number; change: number };
+  profit: number;
+  profitMargin: number;
+  transactions: any[];
+  monthlyHistory: any[]; // [New] 6-month history
+  compliance: any;
+}
+
+class GeminiAccountantService {
+  private genAI: GoogleGenerativeAI;
+  private visionModel: any;
+
+  constructor(apiKey: string) {
+    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  }
+
+  /**
+   * Get AI response with full context, conversation memory, and tool execution
+   */
+  async chat(
+    userId: string,
+    userMessage: string,
+    financialContext: FinancialContext
+  ): Promise<string> {
+    // Define tools with correct Schema structure
+    const tools = [
+      {
+        functionDeclarations: [
+          {
+            name: "addTransaction",
+            description: "Add a financial transaction (income or expense) to the database. Use this when the user explicitly asks to record an expense, income, or profit.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                description: { 
+                  type: SchemaType.STRING, 
+                  description: "Description of the transaction"
+                },
+                amount: { 
+                  type: SchemaType.NUMBER, 
+                  description: "Amount of the transaction"
+                },
+                type: { 
+                  type: SchemaType.STRING, 
+                  description: "Type of transaction",
+                  enum: ["income", "expense"]
+                },
+                category: { 
+                  type: SchemaType.STRING, 
+                  description: "Category (e.g., Office, Payroll, Sales, Software, Travel, Meals, Utilities)"
+                },
+                date: { 
+                  type: SchemaType.STRING, 
+                  description: "Date in YYYY-MM-DD format. If not specified, I will use today's date."
+                },
+              },
+              required: ["description", "amount", "type", "category"],
+            },
+          },
+          {
+            name: "generateReport",
+            description: "Generate a financial report. Use this when the user asks for a report, summary, or export.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                type: {
+                  type: SchemaType.STRING,
+                  description: "Type of report",
+                  enum: ["pdf", "csv", "summary"]
+                },
+                timeframe: {
+                  type: SchemaType.STRING,
+                  description: "Timeframe for the report (e.g., 'last_month', 'ytd', 'all_time')"
+                }
+              },
+              required: ["type"]
+            }
+          }
+        ],
+      },
+    ];
+
+    const model = this.genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      tools: tools as any // Type assertion to bypass strict SDK typing
+    });
+    
+    // Get conversation history from database
+    const dbHistory = conversationRepository.getConversationHistory(userId, 20); // Last 20 messages
+    const history = dbHistory.map((msg: DBConversationMessage) => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }]
+    }));
+
+    // Build system prompt
+    const systemPrompt = this.buildSystemPrompt(financialContext);
+
+    // Create chat with history
+    const chat = model.startChat({
+      history: [
+        { 
+          role: 'user', 
+          parts: [{ text: `SYSTEM INSTRUCTION: ${systemPrompt}` }] 
+        },
+        { 
+          role: 'model', 
+          parts: [{ text: "Understood. I am ready to act as the AI Accountant." }] 
+        },
+        ...history
+      ],
+      generationConfig: {
+        maxOutputTokens: 2048,
+      },
+    });
+
+    try {
+        console.log(`💬 Sending message to Gemini (History: ${history.length} items)`);
+        
+        // Send user message
+        const result = await chat.sendMessage(userMessage);
+        const response = await result.response;
+        
+        // CHECK FOR FUNCTION CALLS
+        const functionCalls = response.functionCalls();
+        if (functionCalls && functionCalls.length > 0) {
+            const call = functionCalls[0]; // Handle first call
+            console.log("🤖 Function Call Triggered:", call.name, call.args);
+
+            let functionResult: any = { error: "Unknown function" };
+
+            if (call.name === "addTransaction") {
+                const args = call.args as any;
+                try {
+                     const newTransactionId = transactionRepository.addTransaction({
+                        user_id: userId,
+                        date: args.date || new Date().toISOString().split('T')[0],
+                        description: args.description,
+                        amount: Number(args.amount),
+                        category: args.category,
+                        type: args.type as 'income' | 'expense'
+                     });
+                     
+                     // Create notification for the new transaction
+                     notificationRepository.createNotification({
+                       user_id: userId,
+                       title: 'New Transaction',
+                       message: `Added ${args.type}: ${args.description} - $${args.amount}`,
+                       type: 'success'
+                     });
+                     
+                     functionResult = { 
+                        success: true, 
+                        message: "Transaction added successfully", 
+                        transactionId: newTransactionId 
+                     };
+                } catch (err: any) {
+                    functionResult = { error: err.message };
+                }
+            } else if (call.name === "generateReport") {
+                 // Placeholder for report generation
+                 const reportType = (call.args as any).type;
+                 functionResult = { success: true, message: `Report of type ${reportType} generated.` };
+            }
+
+            // Send function output back to Gemini
+             const result2 = await chat.sendMessage([
+                {
+                    functionResponse: {
+                        name: call.name,
+                        response: functionResult
+                    }
+                }
+            ]);
+            return result2.response.text();
+        }
+
+        const text = response.text();
+
+        // Save messages to database
+        conversationRepository.saveMessage(userId, 'user', userMessage);
+        conversationRepository.saveMessage(userId, 'model', text);
+
+        return text;
+      } catch (error: any) {
+        console.error("Gemini Chat Error:", error);
+        return `Connection Error: ${error.message || "Unknown error"}. (Hint: Check your API Key)`;
+      }
+  }
+
+  /**
+   * Stream AI response with proper tool execution
+   * (Simulated streaming for now since transactions need to execute first)
+   */
+  async *streamChat(
+    userId: string,
+    userMessage: string,
+    financialContext: FinancialContext
+  ): AsyncGenerator<string> {
+    const fullResponse = await this.chat(userId, userMessage, financialContext);
+    
+    const words = fullResponse.split(' ');
+    
+    for (let i = 0; i < words.length; i++) {
+      const chunk = i === 0 ? words[i] : ' ' + words[i];
+      yield chunk;
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+  }
+
+  /**
+   * Build expert accountant system prompt with current data
+   */
+  private buildSystemPrompt(context: FinancialContext): string {
+    const monthHistoryStr = context.monthlyHistory
+      .map(m => `${m.month}: Rev $${m.income.toLocaleString()} | Exp $${m.expenses.toLocaleString()} | Net $${m.profit.toLocaleString()}`)
+      .join('\n');
+
+    return `You are a friendly financial advisor helping manage this business's finances.
+
+Current Financial Snapshot:
+- Cash: $${context.cashBalance.toLocaleString()}
+- This Month: $${context.revenue.current.toLocaleString()} revenue, $${context.expenses.current.toLocaleString()} expenses
+- Profit Margin: ${context.profitMargin.toFixed(1)}%
+
+Recent Trends:
+${monthHistoryStr}
+
+Your Communication Style:
+- Be conversational and natural, like texting a colleague
+- Keep responses SHORT (1-3 sentences max unless asked for details)
+- Skip formalities - get straight to the point
+- Use casual language: "looks like", "you're doing well", "might want to check"
+- Only mention numbers when directly relevant
+- NO emojis, NO "proactive tips", NO bullet points unless specifically asked
+- If adding a transaction, just confirm it briefly
+
+Examples:
+User: "How are we doing?"
+You: "Pretty solid. Revenue is up ${context.revenue.change}% this month and your margin is healthy at ${context.profitMargin.toFixed(1)}%."
+
+User: "Add lunch expense $50"
+You: "Done. Added $50 lunch expense."
+
+User: "Should I be worried about anything?"
+You: "Not really. Cash flow looks stable, but keep an eye on software costs - they're creeping up a bit."
+`;
+  }
+
+  /**
+   * Clear conversation history for a user
+   */
+  clearHistory(userId: string): void {
+    conversationRepository.clearConversation(userId);
+  }
+
+  /**
+   * Get conversation history for a user
+   */
+  getHistory(userId: string): any[] {
+    const dbHistory = conversationRepository.getConversationHistory(userId, 50);
+    return dbHistory.map((msg: DBConversationMessage) => ({
+      role: msg.role,
+      parts: msg.content
+    }));
+  }
+
+  /**
+   * Get all conversations grouped by date
+   */
+  getAllConversations(userId: string): any[] {
+    return conversationRepository.getAllConversations(userId);
+  }
+
+  /**
+   * Analyze receipt/invoice image using Gemini Vision
+   */
+  async analyzeImage(imageBase64: string): Promise<{
+    amount: number;
+    vendor: string;
+    date: string;
+    category: string;
+    description: string;
+    confidence: number;
+  }> {
+    try {
+      const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+      const prompt = `Analyze this receipt or invoice image and extract the following information in JSON format:
+{
+  "amount": <total amount as number>,
+  "vendor": "<vendor/merchant name>",
+  "date": "<date in YYYY-MM-DD format>",
+  "category": "<category: Office, Payroll, Sales, Software, Travel, Meals, Utilities, or Other>",
+  "description": "<brief description of the transaction>",
+  "confidence": <confidence score 0-1>
+}
+
+Extract only the data. Return valid JSON only, no markdown or explanation.`;
+
+      const result = await this.visionModel.generateContent([
+        prompt,
+        {
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: base64Data
+          }
+        }
+      ]);
+
+      const response = result.response.text();
+      const cleanedResponse = response
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+
+      const extractedData = JSON.parse(cleanedResponse);
+
+      return {
+        amount: parseFloat(extractedData.amount) || 0,
+        vendor: extractedData.vendor || 'Unknown Vendor',
+        date: extractedData.date || new Date().toISOString().split('T')[0],
+        category: extractedData.category || 'Other',
+        description: extractedData.description || 'Transaction from receipt',
+        confidence: parseFloat(extractedData.confidence) || 0.5
+      };
+    } catch (error) {
+      console.error('Image analysis error:', error);
+      throw new Error('Failed to analyze image. Please try again.');
+    }
+  }
+}
+
+export default GeminiAccountantService;

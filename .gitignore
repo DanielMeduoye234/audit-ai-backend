@@ -1,0 +1,36 @@
+# Ignore node_modules
+node_modules/
+
+# Ignore build output
+dist/
+
+# Ignore environment files
+.env
+.env.local
+.env.production
+
+# Ignore logs
+*.log
+npm-debug.log*
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore database files (if using SQLite locally)
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore test coverage
+coverage/
+
+# Ignore temporary files
+tmp/
+temp/
