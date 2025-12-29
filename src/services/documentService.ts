@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import pdf from 'pdf-parse';
+import pdf = require('pdf-parse');
 
 export interface DocumentAnalysisResult {
   filename: string;
@@ -58,6 +58,28 @@ export class DocumentService {
     } catch (error: any) {
       console.error('Error parsing document:', error);
       throw new Error(`Failed to parse document: ${error.message}`);
+    }
+  }
+
+  /**
+   * Parse a PDF file using pdf-parse
+   */
+  private async parsePDF(buffer: Buffer, filename: string): Promise<DocumentAnalysisResult> {
+    try {
+      const data = await pdf(buffer);
+      const text = data.text;
+      
+      return {
+        filename,
+        rowCount: 0, // Not applicable for generic PDF
+        headers: [], // Not applicable
+        dataSample: [], // Not applicable
+        fullContent: text,
+        summary: `PDF Document "${filename}" containing approximately ${data.numpages} pages.`
+      };
+    } catch (error: any) {
+      console.error('Error parsing PDF:', error);
+      throw new Error(`Failed to parse PDF: ${error.message}`);
     }
   }
   

@@ -130,8 +130,6 @@ router.post('/analyze', authenticate, upload.single('file'), async (req, res) =>
         ...result,
         imported: importedCount,
         skipped: skippedCount,
-        imported: importedCount,
-        skipped: skippedCount,
         errors: errors.length > 0 ? errors.slice(0, 5) : undefined, // Return first 5 errors
         aiAudit: aiAuditResult // Return the AI analysis
       }
