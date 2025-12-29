@@ -2,9 +2,10 @@ import db from '../database/db';
 
 export interface User {
   id?: number;
-  user_id: string;
+  user_id: string; // UUID
   name: string;
   email: string;
+  password?: string; // Hashed password
   company: string;
   profile_picture?: string;
   created_at?: string;
@@ -16,10 +17,15 @@ class UserRepository {
     return stmt.get(userId) as User || null;
   }
 
+  getUserByEmail(email: string): User | null {
+    const stmt = db.prepare('SELECT * FROM users WHERE email = ?');
+    return stmt.get(email) as User || null;
+  }
+
   createUser(user: User): number {
     const stmt = db.prepare(`
-      INSERT INTO users (user_id, name, email, company, profile_picture)
-      VALUES (@user_id, @name, @email, @company, @profile_picture)
+      INSERT INTO users (user_id, name, email, password, company, profile_picture)
+      VALUES (@user_id, @name, @email, @password, @company, @profile_picture)
     `);
     const info = stmt.run(user);
     return info.lastInsertRowid as number;
@@ -63,6 +69,20 @@ class UserRepository {
       totalRevenue: transData?.revenue || 0,
       totalExpenses: transData?.expenses || 0,
       accountAge
+    };
+  }
+
+  getAllUsers(): User[] {
+    const stmt = db.prepare('SELECT id, user_id, name, email, company, created_at FROM users ORDER BY created_at DESC');
+    return stmt.all() as User[];
+  }
+
+  getAdminStats(): { totalUsers: number, newUsersToday: number } {
+    const total = db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
+    const today = db.prepare("SELECT COUNT(*) as count FROM users WHERE date(created_at) = date('now')").get() as any;
+    return {
+      totalUsers: total.count,
+      newUsersToday: today.count
     };
   }
 }

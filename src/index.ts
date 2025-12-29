@@ -5,6 +5,8 @@ dotenv.config(); // Load env vars before other imports
 
 import express from 'express';
 import cors from 'cors';
+import authRoutes from './routes/auth';
+import adminRoutes from './routes/admin';
 import aiRoutes from './routes/ai';
 import notificationRoutes from './routes/notifications';
 import transactionRoutes from './routes/transactions';
@@ -43,6 +45,9 @@ app.use(express.json());
 
 // Routes
 // Routes
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/transactions', transactionRoutes);

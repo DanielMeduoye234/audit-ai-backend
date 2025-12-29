@@ -60,27 +60,24 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       }
     }
     
-    // Fallback: Decode JWT locally
+    // Verify token
     const jwt = require('jsonwebtoken');
-    const decoded = jwt.decode(token);
+    const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-change-in-prod';
     
-    if (!decoded || !decoded.sub) {
-      console.error('❌ [AUTH] Invalid token structure');
-      return res.status(401).json({ 
-        error: 'Invalid token structure',
-        details: 'Token is missing user ID.'
-      });
+    const decoded = jwt.verify(token, JWT_SECRET);
+    
+    if (!decoded || !decoded.id) {
+      throw new Error('Invalid token content');
     }
 
-    // console.log('✅ [AUTH] User authenticated via JWT decode:', decoded.sub);
-    req.user = { id: decoded.sub, email: decoded.email };
+    req.user = { id: decoded.id, email: decoded.email };
 
     next();
   } catch (error: any) {
     console.error('❌ [AUTH] Error:', error.message);
     return res.status(401).json({ 
       error: 'Authentication failed',
-      details: error.message
+      details: 'Session expired or invalid. Please login again.'
     });
   }
 }

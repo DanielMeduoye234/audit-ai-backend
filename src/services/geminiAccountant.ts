@@ -32,7 +32,7 @@ class GeminiAccountantService {
       console.log('✅ [GEMINI] AI Accountant Service initialized with API Key (length: ' + apiKey.length + ')');
     }
     this.genAI = new GoogleGenerativeAI(apiKey || 'MISSING_KEY');
-    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   }
 
   /**
@@ -102,7 +102,7 @@ class GeminiAccountantService {
     ];
 
     const model = this.genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       tools: tools as any // Type assertion to bypass strict SDK typing
     });
     
@@ -203,10 +203,22 @@ class GeminiAccountantService {
 
         return text;
       } catch (error: any) {
-        console.error("Gemini Chat Error:", error);
+        console.error("❌ [GEMINI] Chat Error Detail:", {
+            message: error.message,
+            stack: error.stack,
+            cause: error.cause,
+            response: error.response?.data
+        });
+        
         if (error.message?.includes('403') || error.message?.includes('identity')) {
            return "❌ AI Identity Error: Your API Key is missing or unregistered in the live settings. Please check your Railway Environment Variables.";
         }
+        
+        // Detailed hint for fetch failure
+        if (error.message?.includes('fetch failed')) {
+            return `Connection Error: Gemini API is unreachable (fetch failed). This could be due to your local internet connection, a firewall, or Google's servers being temporarily down. (Hint: Your API Key length is ${this.genAI.apiKey?.length || 0})`;
+        }
+
         return `Connection Error: ${error.message || "Unknown error"}. (Hint: Check your API Key)`;
       }
   }
@@ -361,7 +373,7 @@ Extract only the data. Return valid JSON only, no markdown or explanation.`;
     anomalies: string[];
     insights: string[];
   }> {
-    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `You are an expert Financial Auditor. I will provide you with raw financial data (extracted from a CSV or PDF).
     
