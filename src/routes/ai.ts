@@ -109,7 +109,19 @@ router.post('/chat', async (req, res) => {
     }
 
     // Get current financial context
-    const financialContext = await getFinancialContext(userId);
+    const basicContext = await getFinancialContext(userId);
+    // [Power-Up] Fetch additional intelligence
+    const runway = await financialIntelligence.getRunwayAnalysis(userId);
+    const forecasts = await financialIntelligence.forecastCashFlow(userId, 1);
+    const alertRepo = require('../repositories/alertRepository').default; // Lazy load to avoid circular dep issues if any
+    const recentAnomalies = alertRepo.getAnomalies(userId, false).slice(0, 3); // Get top 3 unreviewed anomalies
+
+    const financialContext = {
+      ...basicContext,
+      runway: { months: runway.runway_months, status: runway.status },
+      forecast: forecasts.length > 0 ? { nextMonthBalance: forecasts[0].projected_balance, confidence: forecasts[0].confidence } : null,
+      anomalies: recentAnomalies
+    };
 
     // Get AI response
     const response = await aiService.chat(userId, message, financialContext);
