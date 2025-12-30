@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import pdf = require('pdf-parse');
+const pdf: (buffer: Buffer) => Promise<any> = require('pdf-parse');
 
 export interface DocumentAnalysisResult {
   filename: string;
