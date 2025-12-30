@@ -38,7 +38,13 @@ router.post('/register', async (req, res) => {
       profile_picture: `https://ui-avatars.com/api/?name=${email}&background=random`
     };
 
-    userRepository.createUser(newUser);
+    try {
+      userRepository.createUser(newUser);
+      console.log('✅ User created successfully:', newUser.email);
+    } catch (dbError: any) {
+      console.error('❌ Database error creating user:', dbError);
+      return res.status(500).json({ error: 'Database error saving new user' });
+    }
 
     // Generate token
     const token = jwt.sign({ id: newUser.user_id, email: newUser.email }, JWT_SECRET, {
@@ -58,7 +64,7 @@ router.post('/register', async (req, res) => {
 
   } catch (error: any) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    res.status(500).json({ error: error.message || 'Registration failed' });
   }
 });
 
