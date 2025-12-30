@@ -227,6 +227,7 @@ router.get('/conversations/:userId', (req, res) => {
  */
 async function getFinancialContext(userId: string) {
   // Import the transaction repository
+  const transactionRepository = require('../repositories/transactionRepository').default;
   // Import the transaction repository
   
   // Get real financial summary from database
