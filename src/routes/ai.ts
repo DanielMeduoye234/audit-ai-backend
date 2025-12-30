@@ -12,6 +12,52 @@ if (!apiKey) {
 const aiService = new GeminiAccountantService(apiKey || '');
 
 /**
+ * GET /api/ai/debug
+ * Test Gemini connectivity and list available models
+ */
+router.get('/debug', async (req, res) => {
+  try {
+    const results: any = {
+      apiKeyLength: apiKey?.length || 0,
+      env: process.env.NODE_ENV,
+      availableModels: [],
+      testStatus: 'Starting',
+    };
+
+    // Try native fetch list models to see if API is reachable
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      results.apiStatus = response.status;
+      if (response.ok) {
+        const data = await response.json();
+        results.availableModels = data.models?.map((m: any) => m.name) || [];
+      } else {
+        const errData = await response.text();
+        results.apiError = errData;
+      }
+    } catch (fetchErr: any) {
+      results.fetchError = fetchErr.message;
+    }
+
+    // Try a simple chat test
+    try {
+      const model = (aiService as any).genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = "Say 'Hello, I am working!'";
+      const result = await model.generateContent(prompt);
+      results.testResponse = result.response.text();
+      results.testStatus = 'Success';
+    } catch (chatErr: any) {
+      results.chatError = chatErr.message;
+      results.testStatus = 'Failed';
+    }
+
+    res.json(results);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Generate mock AI response for testing
  */
 function generateMockResponse(message: string): string {
