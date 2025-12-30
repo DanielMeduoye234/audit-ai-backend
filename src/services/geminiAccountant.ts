@@ -200,7 +200,6 @@ class GeminiAccountantService {
                 } catch (err: any) {
                     functionResult = { error: err.message };
                 }
-                }
             } else if (call.name === "bulkCategorize") {
                  const args = call.args as any;
                  try {
