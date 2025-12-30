@@ -204,6 +204,26 @@ class TransactionRepository {
     `);
     return stmt.all(userId) as Transaction[];
   }
+
+  /**
+   * Bulk update category for transactions matching a description pattern (vendor)
+   */
+  bulkUpdateCategory(userId: string, vendorName: string, newCategory: string): number {
+    const stmt = db.prepare(`
+      UPDATE transactions 
+      SET category = @newCategory
+      WHERE user_id = @userId 
+      AND description LIKE @pattern
+    `);
+    
+    const info = stmt.run({
+      newCategory,
+      userId,
+      pattern: `%${vendorName}%`
+    });
+    
+    return info.changes;
+  }
 }
 
 
