@@ -32,8 +32,8 @@ class GeminiAccountantService {
       console.log('✅ [GEMINI] AI Accountant Service initialized with API Key (length: ' + apiKey.length + ')');
     }
     this.genAI = new GoogleGenerativeAI(apiKey || 'MISSING_KEY');
-    // Using gemini-1.5-flash as it's more widely available and stable across regions
-    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // User explicitly requested gemini-2.5-flash
+    this.visionModel = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   }
 
   /**
@@ -103,7 +103,7 @@ class GeminiAccountantService {
     ];
 
     const model = this.genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       tools: tools as any // Type assertion to bypass strict SDK typing
     });
     
@@ -374,7 +374,7 @@ Extract only the data. Return valid JSON only, no markdown or explanation.`;
     anomalies: string[];
     insights: string[];
   }> {
-    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `You are an expert Financial Auditor. I will provide you with raw financial data (extracted from a CSV or PDF).
     
