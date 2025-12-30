@@ -3,6 +3,7 @@
 import dotenv from 'dotenv';
 dotenv.config(); // Load env vars before other imports
 
+// Deployment trigger: 2025-12-30
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth';
