@@ -84,6 +84,24 @@ class GeminiAccountantService {
             },
           },
           {
+            name: "bulkCategorize",
+            description: "Bulk update the category for all transactions matching a specific vendor or description. Use this when the user says 'Make all Uber trips Travel' or similar commands.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                vendor: {
+                  type: SchemaType.STRING,
+                  description: "The vendor name or keyword to match (e.g., 'Uber', 'Starbucks', 'Amazon')"
+                },
+                newCategory: {
+                  type: SchemaType.STRING,
+                  description: "The new category to apply"
+                }
+              },
+              required: ["vendor", "newCategory"]
+            }
+          },
+          {
             name: "generateReport",
             description: "Generate a financial report. Use this when the user asks for a report, summary, or export.",
             parameters: {
@@ -182,6 +200,18 @@ class GeminiAccountantService {
                 } catch (err: any) {
                     functionResult = { error: err.message };
                 }
+                }
+            } else if (call.name === "bulkCategorize") {
+                 const args = call.args as any;
+                 try {
+                   const count = transactionRepository.bulkUpdateCategory(userId, args.vendor, args.newCategory);
+                   functionResult = { 
+                     success: true, 
+                     message: `Successfully updated ${count} transactions matching "${args.vendor}" to category "${args.newCategory}".` 
+                   };
+                 } catch (err: any) {
+                   functionResult = { error: err.message };
+                 } 
             } else if (call.name === "generateReport") {
                  // Placeholder for report generation
                  const reportType = (call.args as any).type;
