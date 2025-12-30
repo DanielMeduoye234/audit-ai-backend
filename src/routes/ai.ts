@@ -1,6 +1,8 @@
 // API Route for AI Chat
 import express from 'express';
 import GeminiAccountantService from '../services/geminiAccountant';
+import notificationRepository from '../repositories/notificationRepository';
+import financialIntelligence from '../services/financialIntelligenceService';
 
 const router = express.Router();
 const apiKey = process.env.GEMINI_API_KEY;
@@ -225,9 +227,7 @@ router.get('/conversations/:userId', (req, res) => {
  */
 async function getFinancialContext(userId: string) {
   // Import the transaction repository
-  import notificationRepository from '../repositories/notificationRepository';
-import financialIntelligence from '../services/financialIntelligenceService';
-  const transactionRepository = require('../repositories/transactionRepository').default;
+  // Import the transaction repository
   
   // Get real financial summary from database
   const summary = transactionRepository.getFinancialSummary(userId);
