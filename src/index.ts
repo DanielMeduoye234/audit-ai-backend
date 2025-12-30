@@ -22,6 +22,7 @@ import documentRoutes from './routes/documents';
 import reportRoutes from './routes/reports';
 import webhookRoutes from './routes/webhooks';
 import feedbackRoutes from './routes/feedback';
+import financialIntelligence from './services/financialIntelligenceService';
 
 
 const app = express();

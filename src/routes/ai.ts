@@ -225,6 +225,8 @@ router.get('/conversations/:userId', (req, res) => {
  */
 async function getFinancialContext(userId: string) {
   // Import the transaction repository
+  import notificationRepository from '../repositories/notificationRepository';
+import financialIntelligence from '../services/financialIntelligenceService';
   const transactionRepository = require('../repositories/transactionRepository').default;
   
   // Get real financial summary from database
@@ -254,7 +256,10 @@ async function getFinancialContext(userId: string) {
       expenses: m.expenses,
       profit: m.profit
     })),
-    compliance: { score: 87, pendingItems: 3, upcomingDeadlines: 2 },
+    compliance: { score: 100, pendingItems: 0, upcomingDeadlines: 0 },
+    runway: { months: 999, status: 'mock' },
+    forecast: { nextMonthBalance: 1000000, confidence: 1.0 },
+    anomalies: []
   };
 }
 
