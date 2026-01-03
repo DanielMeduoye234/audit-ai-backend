@@ -21,6 +21,7 @@ db.exec(`
     message_id TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('user', 'model')),
     content TEXT NOT NULL,
+    metadata TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );

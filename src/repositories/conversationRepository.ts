@@ -7,6 +7,7 @@ export interface ConversationMessage {
   messageId: string;
   role: 'user' | 'model';
   content: string;
+  metadata?: any;
   timestamp?: string;
 }
 
@@ -14,30 +15,56 @@ export class ConversationRepository {
   /**
    * Save a single message to the database
    */
-  saveMessage(userId: string, role: 'user' | 'model', content: string): void {
+  saveMessage(userId: string, role: 'user' | 'model', content: string, metadata: any = null): void {
     const messageId = uuidv4();
-    const stmt = db.prepare(`
-      INSERT INTO conversations (user_id, message_id, role, content)
-      VALUES (?, ?, ?, ?)
-    `);
+    const metadataStr = metadata ? JSON.stringify(metadata) : null;
     
-    stmt.run(userId, messageId, role, content);
+    try {
+      const stmt = db.prepare(`
+        INSERT INTO conversations (user_id, message_id, role, content, metadata)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      stmt.run(userId, messageId, role, content, metadataStr);
+    } catch (error) {
+       // Fallback if metadata column doesn't exist yet
+       const stmt = db.prepare(`
+        INSERT INTO conversations (user_id, message_id, role, content)
+        VALUES (?, ?, ?, ?)
+      `);
+      stmt.run(userId, messageId, role, content);
+    }
   }
 
   /**
    * Get conversation history for a user
    */
   getConversationHistory(userId: string, limit: number = 20): ConversationMessage[] {
-    const stmt = db.prepare(`
-      SELECT id, user_id as userId, message_id as messageId, role, content, timestamp
-      FROM conversations
-      WHERE user_id = ?
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `);
-    
-    const messages = stmt.all(userId, limit) as ConversationMessage[];
-    return messages.reverse(); // Return in chronological order
+    try {
+      const stmt = db.prepare(`
+        SELECT id, user_id as userId, message_id as messageId, role, content, metadata, timestamp
+        FROM conversations
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `);
+      
+      const messages = stmt.all(userId, limit) as any[];
+      return messages.map(m => ({
+        ...m,
+        metadata: m.metadata ? JSON.parse(m.metadata) : null
+      })).reverse();
+    } catch (error) {
+      // Fallback if metadata column doesn't exist
+      const stmt = db.prepare(`
+        SELECT id, user_id as userId, message_id as messageId, role, content, timestamp
+        FROM conversations
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `);
+      const messages = stmt.all(userId, limit) as ConversationMessage[];
+      return messages.reverse();
+    }
   }
 
   /**

@@ -84,6 +84,79 @@ class GeminiAccountantService {
             },
           },
           {
+            name: "queryTransactions",
+            description: "Search for specific transactions based on criteria like category, date range, or amount. Use this to answer questions like 'Show me all software expenses from last month' or 'Did I pay for Uber recently?'",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                category: { type: SchemaType.STRING, description: "Category to filter by" },
+                startDate: { type: SchemaType.STRING, description: "Start date in YYYY-MM-DD" },
+                endDate: { type: SchemaType.STRING, description: "End date in YYYY-MM-DD" },
+                minAmount: { type: SchemaType.NUMBER, description: "Minimum amount" },
+                maxAmount: { type: SchemaType.NUMBER, description: "Maximum amount" },
+                type: { type: SchemaType.STRING, enum: ["income", "expense"] }
+              }
+            }
+          },
+          {
+            name: "getBalanceTrends",
+            description: "Get monthly revenue, expense, and profit trends. Use this to answer 'How is my business trending?' or 'Compare this month to last month'.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                months: { type: SchemaType.NUMBER, description: "Number of months to analyze (default 6)" }
+              }
+            }
+          },
+          {
+            name: "analyzeBudget",
+            description: "Compare actual spending against budget targets for categories. Use this for 'Am I over budget on software?' or 'How much of my marketing budget is left?'",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                category: { type: SchemaType.STRING, description: "Specific category to check (optional)" }
+              }
+            }
+          },
+          {
+            name: "getAnomalies",
+            description: "Identify unusual financial activities or potential errors. Use this for 'Check for anything unusual' or 'Run a quick audit'.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {}
+            }
+          },
+          {
+            name: "forecastCashFlow",
+            description: "Predict future cash flow based on historical patterns. Use this for 'What will my balance be next month?' or 'When will I run out of cash?'.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                months: { type: SchemaType.NUMBER, description: "Number of months to forecast (default 3)" }
+              }
+            }
+          },
+          {
+            name: "getRecurringItems",
+            description: "Identify recurring subscriptions or payments. Use this for 'What are my monthly subscriptions?' or 'Find recurring expenses'.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {}
+            }
+          },
+          {
+            name: "analyzeTrends",
+            description: "Perform deep analysis on growth rates, spending patterns, and profit trajectories. Use this for 'Analyze my revenue growth' or 'Identify patterns in my spending'.",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                metric: { type: SchemaType.STRING, enum: ["revenue", "expenses", "profit"] },
+                timeframe: { type: SchemaType.NUMBER, description: "Number of months to analyze" }
+              },
+              required: ["metric"]
+            }
+          },
+          {
             name: "bulkCategorize",
             description: "Bulk update the category for all transactions matching a specific vendor or description. Use this when the user says 'Make all Uber trips Travel' or similar commands.",
             parameters: {
@@ -160,6 +233,9 @@ class GeminiAccountantService {
     try {
         console.log(`💬 Sending message to Gemini (History: ${history.length} items)`);
         
+        // Save user message immediately to ensure it's recorded
+        conversationRepository.saveMessage(userId, 'user', userMessage);
+        
         // Send user message
         const result = await chat.sendMessage(userMessage);
         const response = await result.response;
@@ -197,9 +273,114 @@ class GeminiAccountantService {
                         message: "Transaction added successfully", 
                         transactionId: newTransactionId 
                      };
+                     
+                     // Store transaction ID in metadata for the next save
+                     const transactionMetadata = { transactionId: newTransactionId, type: args.type };
+                     conversationRepository.saveMessage(userId, 'model', `Record added: ${args.description}`, transactionMetadata);
                 } catch (err: any) {
                     functionResult = { error: err.message };
                 }
+            } else if (call.name === "queryTransactions") {
+                 const args = call.args as any;
+                 try {
+                    let transactions = [];
+                    if (args.startDate || args.endDate) {
+                        transactions = transactionRepository.getTransactionsByDateRange(userId, args.startDate || '1970-01-01', args.endDate || '2099-12-31');
+                    } else if (args.category) {
+                        transactions = transactionRepository.getTransactionsByCategory(userId, args.category);
+                    } else {
+                        transactions = transactionRepository.getRecentTransactions(userId, 50);
+                    }
+                    
+                    // Filter in memory for more complex criteria
+                    if (args.minAmount) transactions = transactions.filter(t => t.amount >= args.minAmount);
+                    if (args.maxAmount) transactions = transactions.filter(t => t.amount <= args.maxAmount);
+                    if (args.type) transactions = transactions.filter(t => t.type === args.type);
+                    
+                    functionResult = { success: true, count: transactions.length, data: transactions.slice(0, 30) };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
+            } else if (call.name === "getBalanceTrends") {
+                 try {
+                    const months = (call.args as any).months || 6;
+                    const trends = transactionRepository.getMonthlyComparison(userId, months);
+                    functionResult = { success: true, data: trends };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
+            } else if (call.name === "analyzeBudget") {
+                 try {
+                    const budgetRepository = require('../repositories/budgetRepository').default;
+                    const budgets = budgetRepository.getBudgets(userId);
+                    const summaries = budgets.map((b: any) => {
+                        const actual = transactionRepository.getCategoryTotals(userId, b.start_date, b.end_date || new Date().toISOString().split('T')[0])
+                            .find(t => t.category === b.category)?.total || 0;
+                        return {
+                            category: b.category,
+                            budgeted: b.amount,
+                            actual,
+                            remaining: b.amount - actual,
+                            percentage: (actual / b.amount) * 100,
+                            status: actual > b.amount ? 'OVER_BUDGET' : (actual > b.amount * 0.9 ? 'WARNING' : 'HEALTHY')
+                        };
+                    });
+                    functionResult = { success: true, data: summaries };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
+            } else if (call.name === "getAnomalies") {
+                 try {
+                    const anomalies = transactionRepository.getAnomalousTransactions(userId);
+                    functionResult = { success: true, count: anomalies.length, data: anomalies };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
+            } else if (call.name === "getRecurringItems") {
+                 try {
+                    const recurring = transactionRepository.detectRecurringTransactions(userId);
+                    functionResult = { success: true, count: recurring.length, data: recurring };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
+            } else if (call.name === "forecastCashFlow") {
+                 try {
+                    const analyticsRepository = require('../repositories/analyticsRepository').default;
+                    const trends = analyticsRepository.getMonthlyTrends(userId, 6);
+                    // Simple linear regression/projection logic for mock forecast
+                    const avgIncome = trends.reduce((sum: number, t: any) => sum + t.income, 0) / (trends.length || 1);
+                    const avgExpenses = trends.reduce((sum: number, t: any) => sum + t.expenses, 0) / (trends.length || 1);
+                    const currentBalance = trends[0]?.profit || 0;
+                    
+                    const forecast = [];
+                    for (let i = 1; i <= ((call.args as any).months || 3); i++) {
+                        forecast.push({
+                            month: `Month +${i}`,
+                            projectedIncome: avgIncome,
+                            projectedExpenses: avgExpenses,
+                            projectedBalance: currentBalance + ((avgIncome - avgExpenses) * i)
+                        });
+                    }
+                    functionResult = { success: true, data: forecast, confidence: 0.85 };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
+            } else if (call.name === "analyzeTrends") {
+                 try {
+                    const analyticsRepository = require('../repositories/analyticsRepository').default;
+                    const metric = (call.args as any).metric;
+                    const months = (call.args as any).timeframe || 6;
+                    const growthRate = analyticsRepository.getGrowthRate(userId, metric, months);
+                    const patterns = analyticsRepository.getSpendingPatterns(userId);
+                    functionResult = { 
+                        success: true, 
+                        growthRate: growthRate.toFixed(2) + '%', 
+                        period: `Last ${months} months`,
+                        topPatterns: patterns.slice(0, 5)
+                    };
+                 } catch (err: any) {
+                    functionResult = { error: err.message };
+                 }
             } else if (call.name === "bulkCategorize") {
                  const args = call.args as any;
                  try {
@@ -226,13 +407,18 @@ class GeminiAccountantService {
                     }
                 }
             ]);
-            return result2.response.text();
+            
+            const finalText = result2.response.text();
+            
+            // Save model response after function execution
+            conversationRepository.saveMessage(userId, 'model', finalText);
+            
+            return finalText;
         }
 
         const text = response.text();
 
-        // Save messages to database
-        conversationRepository.saveMessage(userId, 'user', userMessage);
+        // Save model message to database
         conversationRepository.saveMessage(userId, 'model', text);
 
         return text;
@@ -298,43 +484,44 @@ class GeminiAccountantService {
       ? `⚠️ DETECTED ANOMALIES:\n${context.anomalies.map(a => `- ${a.description}`).join('\n')}`
       : 'No recent anomalies detected.';
 
-    return `You are a highly intelligent AI CFO and Financial Auditor. You are not just a calculator; you are a strategic partner.
+    return `You are Audit AI, a world-class Super-Powered AI CFO and Financial Auditor. You are the digital financial heart of this business.
+Your goal is to provide "Big Four" level accounting expertise with the speed and proactivity of an AI.
 
-Current Financial Snapshot:
-- Cash: $${context.cashBalance.toLocaleString()}
+CURRENT FINANCIAL SNAPSHOT:
+- Cash Position: $${context.cashBalance.toLocaleString()}
 - This Month: $${context.revenue.current.toLocaleString()} Revenue | $${context.expenses.current.toLocaleString()} Expenses
 - Profit Margin: ${context.profitMargin.toFixed(1)}%
 - ${runwayText}
 - ${forecastText}
 
-Recent Trends:
+HISTORICAL PERFORMANCE (Last 6 Months):
 ${monthHistoryStr}
 
 ${anomalyText}
 
-YOUR ROLE & BEHAVIOR:
-1. **The "Tax Guardian"**: 
-   - ALWAYS scan expenses for tax compliance.
-   - If an expense > $75 has no receipt, warn the user: "This might be disallowed by the IRS without a receipt."
-   - Suggest deducting "Meals" as 50% business expense if context fits.
+YOUR SUPER-POWERS & CAPABILITIES:
+1. **FULL CONTEXT AWARENESS**: You have a "bird's eye view". You can query any transaction, analyze any budget, and look back months or even years.
+2. **PROACTIVE AUDITING**: Don't wait to be asked. If you see a weird expense or a budget overrun, mention it.
+3. **STRATEGIC FORECASTING**: You can predict cash flow and suggest "what-if" scenarios.
+4. **TAX GUARDIAN**: You scan everything for tax leaks. If an expense is missing a receipt or seems non-deductible, flag it immediately.
+5. **MULTI-TURN MEMORY**: You remember everything discussed in this session. If you just added a transaction, you know it's there.
 
-2. **Strategic Advisor**:
-   - Don't just report numbers; interpret them.
-   - If runway < 3 months, be URGENT: "We need to cut costs or raise cash immediately."
-   - If profit is high, suggest reinvestment or saving for tax season.
+COMMAND & BEHAVIOR GUIDELINES:
+- **Be a Peer, Not a Tool**: Speak like a smart CFO or Business Partner. Use "We" and "Our".
+- **Absolute Accuracy**: Never hallucinate numbers. If you don't have the data, use your 'queryTransactions' or 'getBalanceTrends' tools to get it.
+- **Synthesize, Don't Just List**: When a user asks "How are we doing?", give a synthesis of Cash + Runway + Profit + Risk.
+- **IRS/Audit Ready**: For any expense > $75, remind the user about receipt requirements.
+- **Cost Optimization**: If you see recurring subscriptions that haven't been mentioned, ask if they are still needed.
 
-3. **Communication Style**:
-   - Professional but conversational (like a smart CFO via Slack).
-   - Be concise. Use bullet points only for complex lists.
-   - If the user asks "How are we doing?", give a synthesis of Cash + Runway + Profit + Risk.
+AVAILABLE ANALYTICAL TOOLS:
+- 'queryTransactions': Search by category, date, amount.
+- 'getBalanceTrends': Compare months/weeks to see growth.
+- 'analyzeBudget': See if we are burning too much in Office, Software, etc.
+- 'getAnomalies': Instant audit of recent activity.
+- 'forecastCashFlow': Look into the future.
+- 'getRecurringItems': Audit our subscriptions.
 
-4. **Response Examples**:
-   - User: "Can I afford a $2k laptop?"
-   - You: "Your cash is $${context.cashBalance.toLocaleString()}, but runway is only ${context.runway?.months} months. I'd recommend waiting until next month's receivables clear."
-
-   - User: "Lunch with client $150"
-   - You: "Recorded $150 for Meals. ⚠️ Reminder: For amounts over $75, please upload a receipt to ensure this deduction holds up in an audit."
-`;
+Always respond in professional but concise markdown. Use bolding for emphasis.`;
   }
 
   /**
